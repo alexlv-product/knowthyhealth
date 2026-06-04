@@ -1,0 +1,104 @@
+/*
+ * KnowThyHealth — global stylesheet
+ *
+ * Loads brand fonts, applies base resets, and exposes a few utility classes
+ * that are awkward to express in pure Tailwind (animated loading dots,
+ * pulse rings, the custom select chevron background).
+ */
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Font imports (preconnect should also be added to index.html for performance)
+ * ──────────────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Base layer — global typography baseline + body
+ * ──────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    @apply text-ink;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans bg-paper leading-relaxed;
+  }
+
+  /* Headings inherit color and letter-spacing from the type scale tokens */
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-ink tracking-tight;
+  }
+
+  /* Selection styled in plum for brand consistency */
+  ::selection {
+    background-color: theme('colors.plum.100');
+    color: theme('colors.plum.900');
+  }
+
+  /* Focus-visible default — components override with their own ring styles */
+  :focus-visible {
+    @apply outline-none ring-2 ring-plum-500 ring-offset-2 ring-offset-paper;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Components layer — utility classes for patterns hard to do in pure Tailwind
+ * ──────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  /*
+   * Custom select chevron — replaces the native browser arrow with a clean
+   * inline SVG that renders identically across all browsers.
+   *
+   * Pairs with: appearance-none, padding-right >= 44px
+   */
+  .select-chevron {
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3e%3cpath d='M1 1.5L6 6.5L11 1.5' stroke='%2378716C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 12px 8px;
+  }
+
+  /*
+   * Loading dots — three pulsing dots for use after loading-state titles
+   * and inside active-phase labels. Used by <LoadingDots /> component.
+   */
+  .loading-dots {
+    @apply inline-flex gap-[3px] ml-1 align-baseline;
+  }
+  .loading-dots > span {
+    @apply w-[3px] h-[3px] rounded-full bg-plum-500;
+    animation: dot-pulse 1.4s ease-in-out infinite;
+  }
+  .loading-dots > span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .loading-dots > span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  /*
+   * Pulse ring — applied to the active-phase icon during loading to convey
+   * "in progress." The ring pulses outward and fades.
+   */
+  .pulse-ring {
+    position: relative;
+  }
+  .pulse-ring::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 2px solid theme('colors.plum.500');
+    border-radius: 9999px;
+    opacity: 0.5;
+    animation: pulse-ring 1.6s ease-out infinite;
+  }
+  .pulse-ring.pulse-ring-warn::after {
+    border-color: theme('colors.warn.border');
+  }
+}
