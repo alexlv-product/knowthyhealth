@@ -25,37 +25,53 @@ function normaliseType(t) {
   return VALID_CITE_TYPES.includes(t) ? t : 'Review';
 }
 
+/** The set of URLs Tavily actually returned — the sole source of citation truth. */
+function buildValidSet(tavilyCitations) {
+  return new Set((tavilyCitations || []).map((c) => c && c.url).filter(Boolean));
+}
+
+/**
+ * Validate ONE card's citations against the Tavily URL set. Strips any source not
+ * in the set; if that empties a non-F card, downgrades it to F "no evidence found".
+ * Used both per-card during streaming (Option B) and inside validateCitations.
+ *
+ * @param {object} card a single advice card
+ * @param {Set<string>} validSet output of buildValidSet
+ * @returns {{ card: object, stripped: number }}
+ */
+function validateCard(card, validSet) {
+  const original = (card.citations || []).length;
+  const kept = (card.citations || [])
+    .filter((c) => c && validSet.has(c.url))
+    .map((c) => ({ ...c, type: normaliseType(c.type) }));
+  const stripped = original - kept.length;
+
+  let { confidenceGrade, noEvidenceCaveat } = card;
+  // Auto-downgrade only the "no evidence found" case: citations emptied by
+  // stripping on a card the model did not already mark F.
+  if (kept.length === 0 && confidenceGrade !== 'F') {
+    confidenceGrade = 'F';
+    noEvidenceCaveat = NO_EVIDENCE_CAVEAT;
+  }
+  return { card: { ...card, citations: kept, confidenceGrade, noEvidenceCaveat }, stripped };
+}
+
 /**
  * @param {object} adviceResponse parsed, schema-valid Claude response
  * @param {Array<{url:string}>} tavilyCitations original Tavily results
  * @returns {{ response: object, strippedCount: number }}
  */
 function validateCitations(adviceResponse, tavilyCitations) {
-  const valid = new Set(
-    (tavilyCitations || []).map((c) => c && c.url).filter(Boolean)
-  );
+  const valid = buildValidSet(tavilyCitations);
   let stripped = 0;
 
   const cards = (adviceResponse.cards || []).map((card) => {
-    const kept = (card.citations || [])
-      .filter((c) => {
-        const ok = c && valid.has(c.url);
-        if (!ok) {
-          stripped += 1;
-          console.warn('[citationValidator] stripped card citation not in Tavily set');
-        }
-        return ok;
-      })
-      .map((c) => ({ ...c, type: normaliseType(c.type) }));
-
-    let { confidenceGrade, noEvidenceCaveat } = card;
-    // Auto-downgrade only the "no evidence found" case: citations emptied by
-    // stripping on a card the model did not already mark F.
-    if (kept.length === 0 && confidenceGrade !== 'F') {
-      confidenceGrade = 'F';
-      noEvidenceCaveat = NO_EVIDENCE_CAVEAT;
+    const r = validateCard(card, valid);
+    if (r.stripped) {
+      stripped += r.stripped;
+      console.warn('[citationValidator] stripped card citation(s) not in Tavily set');
     }
-    return { ...card, citations: kept, confidenceGrade, noEvidenceCaveat };
+    return r.card;
   });
 
   const evidence = (adviceResponse.evidence || [])
@@ -72,4 +88,4 @@ function validateCitations(adviceResponse, tavilyCitations) {
   return { response: { ...adviceResponse, cards, evidence }, strippedCount: stripped };
 }
 
-module.exports = { validateCitations };
+module.exports = { validateCitations, validateCard, buildValidSet };

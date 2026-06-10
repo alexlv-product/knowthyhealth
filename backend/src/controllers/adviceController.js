@@ -72,6 +72,7 @@ module.exports = async function adviceController(req, res, next) {
   log.conditionDisclosed = body.healthCondition !== null;
 
   // ── Step 2: Claude Call 1 — intake (ALWAYS fires; fail → degrade) ─────────
+  const tIntake = Date.now();
   let intakeContext = null;
   let degradedConditionContext = false;
   try {
@@ -84,6 +85,7 @@ module.exports = async function adviceController(req, res, next) {
     degradedConditionContext = body.healthCondition !== null;
     log.claudeCalls += 1;
   }
+  log.msIntake = Date.now() - tIntake;
 
   // ── Step 3: Tavily citations (fail → tavilyFailed, never throw) ───────────
   const citationProfile = {
@@ -93,11 +95,14 @@ module.exports = async function adviceController(req, res, next) {
     researchTargets: intakeContext ? intakeContext.researchTargets : [],
     conditionCategory: intakeContext ? intakeContext.conditionCategory : null,
   };
+  const tTavily = Date.now();
   const { citations, queryCount } = await fetchCitations(citationProfile);
+  log.msTavily = Date.now() - tTavily;
   const tavilyFailed = citations.length === 0;
   log.tavilyQueries = queryCount;
 
   // ── Step 4: Claude Call 2 — readout (429 → 429, else → 503) ───────────────
+  const tAdvice = Date.now();
   let advice;
   try {
     advice = await generateAdvice(
@@ -110,6 +115,7 @@ module.exports = async function adviceController(req, res, next) {
     log.claudeCalls += 1;
   } catch (err) {
     log.claudeCalls += 1;
+    log.msAdvice = Date.now() - tAdvice;
     if (err instanceof RateLimitError) {
       log.status = 429;
       console.info('[advice]', JSON.stringify(log));
@@ -131,6 +137,8 @@ module.exports = async function adviceController(req, res, next) {
     }
     return next(err);
   }
+
+  log.msAdvice = Date.now() - tAdvice;
 
   // ── Step 5: citation validation (never throws) ────────────────────────────
   const { response, strippedCount } = validateCitations(advice, citations);

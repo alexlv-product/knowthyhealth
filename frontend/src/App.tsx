@@ -3,13 +3,14 @@ import { Logo } from './components/ui';
 import {
   Landing,
   InputForm,
-  LoadingOverlay,
+  StreamingReadout,
   ResultsPanel,
   ErrorState,
 } from './components/features';
-import { fetchAdvice } from './api/adviceApi';
+import { streamAdvice, type StreamStage } from './api/adviceStream';
 import { MEDICAL_DISCLAIMER } from './constants/disclaimer';
 import type {
+  AdviceCard,
   AdviceRequest,
   AdviceResponse,
   ApiError,
@@ -59,6 +60,10 @@ export default function App() {
   const [lastError, setLastError] = useState<ApiError | null>(null);
   const [lastForm, setLastForm] = useState<FormData | null>(() => loadPersistedForm());
 
+  // Streaming progress for the loading view.
+  const [streamStage, setStreamStage] = useState<StreamStage | null>(null);
+  const [streamedCards, setStreamedCards] = useState<AdviceCard[]>([]);
+
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
 
@@ -74,19 +79,32 @@ export default function App() {
   async function runRequest(form: FormData) {
     setLastForm(form);
     setAppState('loading');
+    setStreamStage(null);
+    setStreamedCards([]);
     cancelledRef.current = false;
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const data = await fetchAdvice(toRequest(form), controller.signal);
-      setResponseData(data);
-      setLastError(null);
-      setAppState('results');
-    } catch (err) {
-      if (cancelledRef.current) return; // user cancelled — stay on the form
-      setLastError(err as ApiError);
-      setResponseData(null);
-      setAppState('error');
+      await streamAdvice(
+        toRequest(form),
+        {
+          onStage: (stage) => setStreamStage(stage),
+          onCard: (card) => setStreamedCards((prev) => [...prev, card]),
+          onDone: (data) => {
+            if (cancelledRef.current) return;
+            setResponseData(data);
+            setLastError(null);
+            setAppState('results');
+          },
+          onError: (err) => {
+            if (cancelledRef.current) return; // user cancelled — stay on the form
+            setLastError(err);
+            setResponseData(null);
+            setAppState('error');
+          },
+        },
+        controller.signal
+      );
     } finally {
       abortRef.current = null;
     }
@@ -153,7 +171,13 @@ export default function App() {
         {appState === 'idle' && (
           <InputForm onSubmit={runRequest} initialValues={lastForm} />
         )}
-        {appState === 'loading' && <LoadingOverlay onCancel={handleCancel} />}
+        {appState === 'loading' && (
+          <StreamingReadout
+            stage={streamStage}
+            cards={streamedCards}
+            onCancel={handleCancel}
+          />
+        )}
         {appState === 'results' && responseData && (
           <ResultsPanel responseData={responseData} onReset={handleReset} />
         )}

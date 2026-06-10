@@ -14,7 +14,8 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
-    "express": "^4.22.2"
+    "express": "^4.22.2",
+    "partial-json": "^0.1.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"

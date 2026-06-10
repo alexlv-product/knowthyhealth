@@ -11,6 +11,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const adviceController = require('./src/controllers/adviceController');
+const adviceStreamController = require('./src/controllers/adviceStreamController');
 const { newSupportReference } = require('./src/utils/errors');
 
 const app = express();
@@ -53,6 +54,9 @@ app.use((err, req, res, next) => {
 
 // The one and only route.
 app.post('/api/v1/advice', adviceController);
+
+// Streaming variant — same pipeline, Call 2 streamed over SSE for progressive UI.
+app.post('/api/v1/advice/stream', adviceStreamController);
 
 // Lightweight health check (handy for platform probes; not part of the contract).
 app.get('/healthz', (req, res) => res.status(200).json({ ok: true }));

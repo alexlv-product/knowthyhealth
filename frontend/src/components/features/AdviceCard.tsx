@@ -9,6 +9,13 @@ import type {
 
 interface AdviceCardProps {
   card: AdviceCardData;
+  /**
+   * When true, the Evidence/Sources tier (T3) is gated: the "Evidence →" control
+   * is replaced with a note that sources verify on completion. Used while
+   * streaming, before the server has validated citations — protects data
+   * integrity by never showing an unvalidated source. Default false.
+   */
+  sourcesLocked?: boolean;
 }
 
 type Tier = 1 | 2 | 3;
@@ -51,7 +58,7 @@ const TIER_BORDER: Record<Tier, string> = {
  * deep-red-bordered block inside the card. A "contradicted" F may carry the
  * sources that contradict the claim; a "no evidence found" F has none.
  */
-export function AdviceCard({ card }: AdviceCardProps) {
+export function AdviceCard({ card, sourcesLocked = false }: AdviceCardProps) {
   const [tier, setTier] = useState<Tier>(1);
   const meta = GRADE_META[card.confidenceGrade];
   const isF = card.confidenceGrade === 'F';
@@ -164,7 +171,13 @@ export function AdviceCard({ card }: AdviceCardProps) {
         {tier === 2 && (
           <>
             <DepthButton onClick={() => setTier(1)}>Less ↑</DepthButton>
-            <DepthButton onClick={() => setTier(3)}>Evidence →</DepthButton>
+            {sourcesLocked ? (
+              <span className="font-mono text-[11px] text-stone-400">
+                Sources verify when your readout completes
+              </span>
+            ) : (
+              <DepthButton onClick={() => setTier(3)}>Evidence →</DepthButton>
+            )}
           </>
         )}
         {tier === 3 && (
