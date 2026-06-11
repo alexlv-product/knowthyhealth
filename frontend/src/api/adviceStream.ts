@@ -28,6 +28,8 @@ export type StreamStage = 'intake' | 'citations' | 'writing';
 
 export interface StreamHandlers {
   onStage?: (stage: StreamStage) => void;
+  /** Interim user-facing note (e.g. "having trouble accessing sources, retrying"). */
+  onNotice?: (message: string) => void;
   /** Called with each fully-written, citation-validated card as it completes. */
   onCard?: (card: AdviceCard, index: number) => void;
   onDone?: (response: AdviceResponse) => void;
@@ -105,6 +107,9 @@ export async function streamAdvice(
     switch (event) {
       case 'stage':
         handlers.onStage?.(parsed.stage as StreamStage);
+        break;
+      case 'notice':
+        handlers.onNotice?.(parsed.message as string);
         break;
       case 'card':
         handlers.onCard?.(parsed.card as AdviceCard, (parsed.index as number) ?? 0);

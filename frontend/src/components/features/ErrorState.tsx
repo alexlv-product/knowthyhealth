@@ -5,6 +5,8 @@ import type { ApiError } from '../../types/api';
 
 interface ErrorStateProps {
   error: ApiError;
+  /** True when this is a repeat retrieval failure — escalates the headline copy. */
+  escalated?: boolean;
   /** Re-fire the request (or, for validation, return to the form). */
   onRetry: () => void;
   /** Always return to the (preserved) intake form. */
@@ -16,27 +18,29 @@ interface ErrorStateProps {
  *
  * Visual vocabulary (§5.3): amber = recoverable / degraded; red = hard failure.
  * Plum never appears in an error. Only the opaque supportReference is shown — no
- * codes, stages, timestamps, or stack traces (§5.2). Tavily-degraded is NOT here;
- * it renders as an amber banner above an all-F readout (AdviceCardGrid).
+ * codes, stages, timestamps, or stack traces (§5.2).
  *
  *   NETWORK_ERROR           → amber "Can't reach the server" (offline/CORS)
+ *   RETRIEVAL_UNAVAILABLE   → amber "Sources are temporarily unavailable" (retrieval
+ *                             failed after one retry; we never show an all-F readout)
  *   ADVICE_GENERATION_ERROR → red "The composition step failed"
  *   INTERNAL_ERROR          → red, generic
  *   RATE_LIMIT_ERROR        → amber, retry gated by a live countdown
  *   VALIDATION_ERROR        → amber, return to the form
  */
-export function ErrorState({ error, onRetry, onEditIntake }: ErrorStateProps) {
+export function ErrorState({ error, escalated = false, onRetry, onEditIntake }: ErrorStateProps) {
   const isNetwork = error.code === 'NETWORK_ERROR';
   const isRateLimit = error.code === 'RATE_LIMIT_ERROR';
   const isValidation = error.code === 'VALIDATION_ERROR';
+  const isRetrieval = error.code === 'RETRIEVAL_UNAVAILABLE';
   const isHardFailure = error.code === 'ADVICE_GENERATION_ERROR' || error.code === 'INTERNAL_ERROR';
 
   const tone: 'amber' | 'red' = isHardFailure ? 'red' : 'amber';
 
+  // A countdown gate applies whenever the server (rate limit) or the app (escalated
+  // retrieval failure) supplies a retry-after — the button re-enables when it elapses.
   const initialCooldown =
-    isRateLimit && error.retryAfterSeconds && error.retryAfterSeconds > 0
-      ? Math.ceil(error.retryAfterSeconds)
-      : 0;
+    error.retryAfterSeconds && error.retryAfterSeconds > 0 ? Math.ceil(error.retryAfterSeconds) : 0;
   const [cooldown, setCooldown] = useState(initialCooldown);
 
   useEffect(() => {
@@ -46,17 +50,21 @@ export function ErrorState({ error, onRetry, onEditIntake }: ErrorStateProps) {
   }, [cooldown]);
 
   const retryDisabled = cooldown > 0;
-  const retryLabel = retryDisabled ? `Try again in ${cooldown}s` : 'Try again';
+  const retryLabel = retryDisabled ? `Try again in ${fmtWait(cooldown)}` : 'Try again';
 
   const headline = isNetwork
     ? "Can't reach the server"
-    : error.code === 'ADVICE_GENERATION_ERROR'
-      ? 'The composition step failed'
-      : isRateLimit
-        ? 'Too many requests right now'
-        : isValidation
-          ? 'Something in your intake needs a look'
-          : 'Something went wrong';
+    : isRetrieval
+      ? escalated
+        ? "We're still not reaching the sources"
+        : 'Sources are temporarily unavailable'
+      : error.code === 'ADVICE_GENERATION_ERROR'
+        ? 'The composition step failed'
+        : isRateLimit
+          ? 'Too many requests right now'
+          : isValidation
+            ? 'Something in your intake needs a look'
+            : 'Something went wrong';
 
   return (
     <div className="mx-auto flex min-h-[55vh] w-full max-w-page flex-col items-center justify-center px-6 text-center">
@@ -100,6 +108,12 @@ export function ErrorState({ error, onRetry, onEditIntake }: ErrorStateProps) {
       )}
     </div>
   );
+}
+
+/** A retry countdown: seconds under a minute (e.g. "8s"), else "M:SS" (e.g. "9:58"). */
+function fmtWait(s: number): string {
+  if (s >= 60) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `${s}s`;
 }
 
 function ErrorIcon({ tone, network }: { tone: 'amber' | 'red'; network: boolean }) {

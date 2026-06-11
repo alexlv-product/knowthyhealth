@@ -8,6 +8,8 @@ import type { StreamStage } from '../../api/adviceStream';
 interface StreamingReadoutProps {
   /** The pipeline phase reported by the backend, or null before the first event. */
   stage: StreamStage | null;
+  /** Interim user-facing note (e.g. retrieval is being retried), or null. */
+  notice?: string | null;
   /** Cards that have finished generating AND been citation-validated, in order. */
   cards: AdviceCardData[];
   onCancel?: () => void;
@@ -35,7 +37,7 @@ function fmtClock(s: number): string {
  * A "writing your next finding" cue keeps momentum between cards. On completion,
  * the full readout (summary, evidence, the final card) replaces this view.
  */
-export function StreamingReadout({ stage, cards, onCancel }: StreamingReadoutProps) {
+export function StreamingReadout({ stage, notice, cards, onCancel }: StreamingReadoutProps) {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef(Date.now());
   const stageStartRef = useRef<Partial<Record<StreamStage, number>>>({});
@@ -80,6 +82,13 @@ export function StreamingReadout({ stage, cards, onCancel }: StreamingReadoutPro
           {fmtClock(elapsed)}
         </span>
       </div>
+
+      {/* Interim notice — e.g. retrieval is being retried (amber, attention-getting). */}
+      {notice && (
+        <div className="mx-auto mt-7 max-w-xl rounded-lg border-hairline border-warn-border bg-warn-bg px-4 py-3">
+          <p className="text-[12.5px] leading-[1.6] text-warn-textBold">{notice}</p>
+        </div>
+      )}
 
       {/* Persistent expectation banner */}
       <div className="mx-auto mt-7 max-w-xl rounded-lg border-hairline border-plum-200 bg-plum-50 px-4 py-3">

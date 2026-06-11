@@ -170,10 +170,9 @@ clear WHICH kind of F it is:
   - "contradicted": the evidence actively contradicts a common claim.
 F cards are always shown, never suppressed. A "contradicted" F card may carry the
 citations that contradict the claim; a "no evidence found" F card has citations: [].
-
-If tavilyFailed is true in the user message: every card MUST be grade F, with a
-noEvidenceCaveat of the "no evidence found" kind that notes citations could not
-be retrieved this session (not that the claims are contradicted).
+(Per-card F is for an individual claim that lacks support; the readout as a whole is
+only composed when real citations were retrieved — an empty retrieval is surfaced to
+the user as an error upstream, never as an all-F readout.)
 
 ════════════════════════════════════════
 CONDITION WARNING RULES

@@ -13,6 +13,7 @@ const cors = require('cors');
 const adviceController = require('./src/controllers/adviceController');
 const adviceStreamController = require('./src/controllers/adviceStreamController');
 const { newSupportReference } = require('./src/utils/errors');
+const { errorAgentMiddleware } = require('./src/errorAgent');
 
 const app = express();
 
@@ -61,18 +62,12 @@ app.post('/api/v1/advice/stream', adviceStreamController);
 // Lightweight health check (handy for platform probes; not part of the contract).
 app.get('/healthz', (req, res) => res.status(200).json({ ok: true }));
 
-// Global error handler — anything uncaught becomes a safe INTERNAL_ERROR (D-15/16).
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  const supportReference = newSupportReference();
-  // Raw error stays in logs only (PRD v1.4 §5.2); the client sees the opaque ref.
-  console.error('[unhandled]', JSON.stringify({ ref: supportReference }), err && err.message ? err.message : err);
-  res.status(500).json({
-    error: 'INTERNAL_ERROR',
-    message: 'An unexpected error occurred. Please try again.',
-    supportReference,
-  });
-});
+// Global error handler — the error agent's choke point. Audited replacement for
+// the bare 500 handler: same opaque-envelope contract (D-15/16, PRD v1.4 §5.2),
+// plus a structured [errorAgent] incident record. Runs only on a forwarded error,
+// so the happy path is untouched. Day 1: static floor; agent classification (Day 2)
+// slots in behind the same call without changing this wiring.
+app.use(errorAgentMiddleware);
 
 // Start only when run directly, so tests can import the app without binding a port.
 if (require.main === module) {

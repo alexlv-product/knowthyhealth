@@ -7,10 +7,11 @@
  *
  * Wire protocol (Server-Sent Events). Input is validated BEFORE switching to SSE
  * so a bad request still returns a normal 400 JSON envelope. Once streaming:
- *   event: stage  data: {"stage":"intake"|"citations"|"writing"}
- *   event: delta  data: {"text":"<raw Claude chunk>"}      (Call 2 only)
- *   event: done   data: {"response": <validated AdviceResponse>}
- *   event: error  data: {"error","message","supportReference",[retryAfterSeconds]}
+ *   event: stage   data: {"stage":"intake"|"citations"|"writing"}
+ *   event: notice  data: {"message":"<interim user-facing note, e.g. retrying retrieval>"}
+ *   event: card    data: {"card": <validated AdviceCard>, "index": n}   (Call 2, per card)
+ *   event: done    data: {"response": <validated AdviceResponse>}
+ *   event: error   data: {"error","message","supportReference",[retryAfterSeconds]}
  *
  * The `done` payload is the SAME schema-validated, citation-stripped object the
  * non-streaming endpoint returns — the client treats it as the source of truth
@@ -30,6 +31,11 @@ const {
   AdviceGenerationError,
   newSupportReference,
 } = require('../utils/errors');
+const {
+  RETRIEVAL_UNAVAILABLE,
+  RETRIEVAL_INTERIM_MESSAGE,
+  RETRIEVAL_TERMINAL_MESSAGE,
+} = require('../utils/userMessages');
 
 module.exports = async function adviceStreamController(req, res, next) {
   const startedAt = Date.now();
@@ -103,7 +109,10 @@ module.exports = async function adviceStreamController(req, res, next) {
   }
   log.msIntake = Date.now() - tIntake;
 
-  // ── Step 3: Tavily citations (fail → tavilyFailed, never throws) ──────────
+  // ── Step 3: Tavily citations — deterministic retry-then-alert on EMPTY ─────
+  // Empty retrieval is NOT degraded to an all-F readout. Tell the user we're retrying
+  // (an interim `notice` event), retry once, and if still empty surface a clear
+  // `error` and stop — we never stream a readout composed from zero citations.
   send('stage', { stage: 'citations' });
   const citationProfile = {
     gender: body.gender,
@@ -113,10 +122,27 @@ module.exports = async function adviceStreamController(req, res, next) {
     conditionCategory: intakeContext ? intakeContext.conditionCategory : null,
   };
   const tTavily = Date.now();
-  const { citations, queryCount } = await fetchCitations(citationProfile);
-  log.msTavily = Date.now() - tTavily;
-  const tavilyFailed = citations.length === 0;
+  let { citations, queryCount } = await fetchCitations(citationProfile);
   log.tavilyQueries = queryCount;
+
+  if (citations.length === 0) {
+    send('notice', { message: RETRIEVAL_INTERIM_MESSAGE });
+    const retried = await fetchCitations(citationProfile); // the one retry
+    citations = retried.citations;
+    log.tavilyQueries += retried.queryCount;
+    if (citations.length === 0) {
+      log.msTavily = Date.now() - tTavily;
+      log.status = 503; // RETRIEVAL_UNAVAILABLE
+      console.info('[advice:stream]', JSON.stringify(log));
+      send('error', {
+        error: RETRIEVAL_UNAVAILABLE,
+        message: RETRIEVAL_TERMINAL_MESSAGE,
+        supportReference,
+      });
+      return res.end();
+    }
+  }
+  log.msTavily = Date.now() - tTavily;
 
   // ── Step 4: Claude Call 2 — readout, STREAMED card-by-card ────────────────
   // Each card is citation-validated the instant it finishes generating, then
@@ -130,7 +156,7 @@ module.exports = async function adviceStreamController(req, res, next) {
       body,
       citations,
       intakeContext,
-      tavilyFailed,
+      false, // tavilyFailed is never true here — empty retrieval errored out above
       degradedConditionContext,
       (card, index) => {
         const { card: verified } = validateCard(card, validSet);

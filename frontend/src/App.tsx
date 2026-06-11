@@ -20,6 +20,19 @@ import type {
 
 const FORM_STORAGE_KEY = 'kth.intake';
 
+/**
+ * Shown when retrieval fails AGAIN on a user-initiated retry (the backend is stateless,
+ * so the escalation is tracked client-side). The first failure uses the backend's
+ * message; a repeat means the outage is persisting, so we stop implying we'll keep
+ * auto-trying and give a concrete next step.
+ */
+const RETRIEVAL_ESCALATED_MESSAGE =
+  'We are still not getting the responses we expected. This is out of our hands. ' +
+  'Please wait 10 minutes and try again.';
+
+/** The enforced wait (a re-enabling countdown) on the escalated retrieval screen. */
+const RETRIEVAL_RETRY_WAIT_SECONDS = 10 * 60;
+
 /** FormData → AdviceRequest. Only the filled fields are sent (§1.2). */
 function toRequest(form: FormData): AdviceRequest {
   const condition = form.healthCondition.trim();
@@ -62,10 +75,14 @@ export default function App() {
 
   // Streaming progress for the loading view.
   const [streamStage, setStreamStage] = useState<StreamStage | null>(null);
+  const [streamNotice, setStreamNotice] = useState<string | null>(null);
   const [streamedCards, setStreamedCards] = useState<AdviceCard[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
+  // Consecutive RETRIEVAL_UNAVAILABLE failures, to escalate the copy on a repeat retry.
+  const retrievalFailsRef = useRef(0);
+  const [errorEscalated, setErrorEscalated] = useState(false);
 
   // Persist the most recent intake.
   useEffect(() => {
@@ -80,6 +97,7 @@ export default function App() {
     setLastForm(form);
     setAppState('loading');
     setStreamStage(null);
+    setStreamNotice(null);
     setStreamedCards([]);
     cancelledRef.current = false;
     const controller = new AbortController();
@@ -88,17 +106,39 @@ export default function App() {
       await streamAdvice(
         toRequest(form),
         {
-          onStage: (stage) => setStreamStage(stage),
+          onStage: (stage) => {
+            setStreamStage(stage);
+            if (stage === 'writing') setStreamNotice(null); // retry cleared it
+          },
+          onNotice: (message) => setStreamNotice(message),
           onCard: (card) => setStreamedCards((prev) => [...prev, card]),
           onDone: (data) => {
             if (cancelledRef.current) return;
+            retrievalFailsRef.current = 0; // success clears the retrieval-failure streak
             setResponseData(data);
             setLastError(null);
             setAppState('results');
           },
           onError: (err) => {
             if (cancelledRef.current) return; // user cancelled — stay on the form
-            setLastError(err);
+            if (err.code === 'RETRIEVAL_UNAVAILABLE') {
+              retrievalFailsRef.current += 1;
+              const escalated = retrievalFailsRef.current >= 2;
+              setErrorEscalated(escalated);
+              setLastError(
+                escalated
+                  ? {
+                      ...err,
+                      message: RETRIEVAL_ESCALATED_MESSAGE,
+                      retryAfterSeconds: RETRIEVAL_RETRY_WAIT_SECONDS, // gates "Try again" with a countdown
+                    }
+                  : err
+              );
+            } else {
+              retrievalFailsRef.current = 0; // a different (or no) failure resets the streak
+              setErrorEscalated(false);
+              setLastError(err);
+            }
             setResponseData(null);
             setAppState('error');
           },
@@ -174,6 +214,7 @@ export default function App() {
         {appState === 'loading' && (
           <StreamingReadout
             stage={streamStage}
+            notice={streamNotice}
             cards={streamedCards}
             onCancel={handleCancel}
           />
@@ -184,6 +225,7 @@ export default function App() {
         {appState === 'error' && lastError && (
           <ErrorState
             error={lastError}
+            escalated={errorEscalated}
             onRetry={handleRetry}
             onEditIntake={handleReset}
           />

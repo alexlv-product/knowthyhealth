@@ -116,6 +116,7 @@ export type ApiErrorCode =
   | 'VALIDATION_ERROR'
   | 'ADVICE_GENERATION_ERROR'
   | 'RATE_LIMIT_ERROR'
+  | 'RETRIEVAL_UNAVAILABLE' // citation retrieval failed (after one retry); no readout shown
   | 'INTERNAL_ERROR'
   | 'NETWORK_ERROR'; // client-only: fetch rejected (CORS, offline, timeout)
 
