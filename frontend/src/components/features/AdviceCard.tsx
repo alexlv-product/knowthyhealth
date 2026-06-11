@@ -44,6 +44,13 @@ const TIER_BORDER: Record<Tier, string> = {
   3: 'border border-tier-t3 shadow-tier-3',
 };
 
+/** What each depth level actually shows — replaces the opaque "tier N / 3". */
+const TIER_LABEL: Record<Tier, string> = {
+  1: 'Summary',
+  2: 'Details',
+  3: 'Sources',
+};
+
 /**
  * AdviceCard — one domain recommendation as a three-tier accordion (§2.1–§2.4).
  *
@@ -72,8 +79,8 @@ export function AdviceCard({ card, sourcesLocked = false }: AdviceCardProps) {
         </span>
         <span className="flex items-center gap-2">
           <TierDots tier={tier} />
-          <span className="font-mono text-[10px] tracking-meta text-stone-400">
-            tier {tier} / 3
+          <span className="text-[10px] font-medium uppercase tracking-meta text-stone-400">
+            {TIER_LABEL[tier]}
           </span>
         </span>
       </div>
