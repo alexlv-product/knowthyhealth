@@ -36,6 +36,7 @@ const {
   RETRIEVAL_INTERIM_MESSAGE,
   RETRIEVAL_TERMINAL_MESSAGE,
 } = require('../utils/userMessages');
+const { escalate } = require('../recoveryAgent');
 
 module.exports = async function adviceStreamController(req, res, next) {
   const startedAt = Date.now();
@@ -94,7 +95,52 @@ module.exports = async function adviceStreamController(req, res, next) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  // ── Step 2: Claude Call 1 — intake (always fires; fail → degrade) ──────────
+  /** Emit a recovery-agent `respond` directive as a terminal SSE `error` event. */
+  const sendDirectiveError = (directive) => {
+    const payload = { ...directive.body };
+    if (directive.headers && directive.headers['Retry-After']) {
+      payload.retryAfterSeconds = Number(directive.headers['Retry-After']);
+    }
+    send('error', payload);
+  };
+
+  /**
+   * Terminal readout failure → original 429/503/500 SSE contract. Used when a
+   * retry is spent, unsafe (cards already streamed), or the agent declines it.
+   */
+  const endReadoutFailure = (error) => {
+    if (error instanceof RateLimitError) {
+      log.status = 429;
+      console.info('[advice:stream]', JSON.stringify(log));
+      send('error', {
+        error: 'RATE_LIMIT_ERROR',
+        message: "We're experiencing high demand right now. Please wait a moment and try again.",
+        supportReference,
+        retryAfterSeconds: error.retryAfterSeconds || null,
+      });
+    } else if (error instanceof AdviceGenerationError) {
+      log.status = 503;
+      console.info('[advice:stream]', JSON.stringify(log));
+      send('error', {
+        error: 'ADVICE_GENERATION_ERROR',
+        message: "We weren't able to generate your readout right now. Please try again in a moment.",
+        supportReference,
+      });
+    } else {
+      log.status = 500;
+      console.error('[advice:stream unhandled]', JSON.stringify({ ref: supportReference }), error && error.message ? error.message : error);
+      send('error', {
+        error: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred. Please try again.',
+        supportReference,
+      });
+    }
+    return res.end();
+  };
+
+  // ── Step 2: Claude Call 1 — intake, agent-wired on failure ────────────────
+  // Pre-stream, so all directives are clean: retry the call, fall back to the
+  // demographic spine (audited), or fail with a terminal SSE error event.
   send('stage', { stage: 'intake' });
   const tIntake = Date.now();
   let intakeContext = null;
@@ -102,10 +148,29 @@ module.exports = async function adviceStreamController(req, res, next) {
   try {
     intakeContext = await processIntake(body);
     log.claudeCalls += 1;
-  } catch {
-    intakeContext = null;
-    degradedConditionContext = body.healthCondition !== null;
+  } catch (err) {
     log.claudeCalls += 1;
+    const directive = await escalate(err, { req, stage: 'intake', retryCount: 0, supportReference });
+    if (directive.kind === 'retry') {
+      try {
+        intakeContext = await processIntake(body);
+        log.claudeCalls += 1;
+      } catch {
+        log.claudeCalls += 1; // retry spent — degrade (existing safe behavior)
+        intakeContext = null;
+        degradedConditionContext = body.healthCondition !== null;
+      }
+    } else if (directive.kind === 'fallback') {
+      intakeContext = null; // proceed_without_intake_context → demographic spine
+      degradedConditionContext = body.healthCondition !== null;
+    } else {
+      // respond (fail_gracefully / static floor) — terminal SSE error.
+      log.status = directive.status;
+      log.msIntake = Date.now() - tIntake;
+      console.info('[advice:stream]', JSON.stringify(log));
+      sendDirectiveError(directive);
+      return res.end();
+    }
   }
   log.msIntake = Date.now() - tIntake;
 
@@ -144,59 +209,51 @@ module.exports = async function adviceStreamController(req, res, next) {
   }
   log.msTavily = Date.now() - tTavily;
 
-  // ── Step 4: Claude Call 2 — readout, STREAMED card-by-card ────────────────
+  // ── Step 4: Claude Call 2 — readout, STREAMED card-by-card (agent-wired) ───
   // Each card is citation-validated the instant it finishes generating, then
-  // streamed down already verified — so the UI never shows an unvalidated source.
+  // streamed down already verified. On failure the recovery agent decides; a
+  // retry is honored ONLY before the first card streams — Option B partial
+  // output can't be safely re-sent (it would duplicate cards).
   send('stage', { stage: 'writing' });
   const validSet = buildValidSet(citations);
+  let cardsEmitted = 0;
+  const onCard = (card, index) => {
+    const { card: verified } = validateCard(card, validSet);
+    cardsEmitted += 1;
+    send('card', { card: verified, index });
+  };
   const tAdvice = Date.now();
   let advice;
   try {
     advice = await generateAdviceStream(
-      body,
-      citations,
-      intakeContext,
-      false, // tavilyFailed is never true here — empty retrieval errored out above
-      degradedConditionContext,
-      (card, index) => {
-        const { card: verified } = validateCard(card, validSet);
-        send('card', { card: verified, index });
-      },
-      abortController.signal
+      body, citations, intakeContext, false, degradedConditionContext, onCard, abortController.signal
     );
     log.claudeCalls += 1;
   } catch (err) {
     log.claudeCalls += 1;
     log.msAdvice = Date.now() - tAdvice;
-    if (err instanceof RateLimitError) {
-      log.status = 429;
+    if (clientGone) return res.end(); // client navigated away — generation was aborted
+    const directive = await escalate(err, { req, stage: 'readout', retryCount: 0, supportReference });
+    if (directive.kind === 'retry' && cardsEmitted === 0) {
+      try {
+        advice = await generateAdviceStream(
+          body, citations, intakeContext, false, degradedConditionContext, onCard, abortController.signal
+        );
+        log.claudeCalls += 1;
+      } catch (err2) {
+        log.claudeCalls += 1;
+        log.msAdvice = Date.now() - tAdvice;
+        return endReadoutFailure(err2);
+      }
+    } else if (directive.kind === 'respond') {
+      log.status = directive.status;
       console.info('[advice:stream]', JSON.stringify(log));
-      send('error', {
-        error: 'RATE_LIMIT_ERROR',
-        message: "We're experiencing high demand right now. Please wait a moment and try again.",
-        supportReference,
-        retryAfterSeconds: err.retryAfterSeconds || null,
-      });
+      sendDirectiveError(directive);
       return res.end();
+    } else {
+      // retry requested but unsafe (cards already on the wire) → terminal, original error.
+      return endReadoutFailure(err);
     }
-    if (err instanceof AdviceGenerationError) {
-      log.status = 503;
-      console.info('[advice:stream]', JSON.stringify(log));
-      send('error', {
-        error: 'ADVICE_GENERATION_ERROR',
-        message: "We weren't able to generate your readout right now. Please try again in a moment.",
-        supportReference,
-      });
-      return res.end();
-    }
-    log.status = 500;
-    console.error('[advice:stream unhandled]', JSON.stringify({ ref: supportReference }), err && err.message ? err.message : err);
-    send('error', {
-      error: 'INTERNAL_ERROR',
-      message: 'An unexpected error occurred. Please try again.',
-      supportReference,
-    });
-    return res.end();
   }
   log.msAdvice = Date.now() - tAdvice;
 

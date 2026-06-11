@@ -22,8 +22,9 @@
  *     → validate citations (never throws)
  *     → 200 with the cleaned response
  *
- * The streaming endpoint (/api/v1/advice/stream — the frontend's path) is
- * deliberately NOT wired to the agent in V1 (design note: buffered only).
+ * The streaming endpoint (/api/v1/advice/stream — the frontend's path) is wired
+ * to the agent the same way (adviceStreamController.js), with the readout retry
+ * constrained to before the first card streams.
  *
  * Logging hygiene (Flag #10): the [advice] log carries only counts, status, timings,
  * and the support reference. The agent's own [recoveryAgent] incident log reuses that

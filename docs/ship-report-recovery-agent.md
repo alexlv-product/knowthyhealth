@@ -37,6 +37,6 @@ KnowThyHealth's core is deliberately **deterministic** — orchestrated retrieva
 
 ## Scope & what's next
 
-**V1 boundaries (intentional):** the agent runs on the buffered API path; the live streaming path gets the retrieval-failure UX deterministically. We can't yet distinguish "service down" from "genuinely no results" — both show the same alert. The retry gate is on the button, not a global lock.
+**Scope:** the agent runs on **both** the buffered API and the live **streaming** path (the one the browser uses), at the intake and readout stages; retrieval failures are handled deterministically on both. On streaming, a readout retry is honored only before the first card streams (partial output can't be safely re-sent). Remaining boundary: we can't yet distinguish "service down" from "genuinely no results" — both show the same retrieval alert.
 
-**V2 roadmap:** surface the retrieval *cause* and split the message (transient → "try again"; genuinely empty → "no research matched your profile"); bring the agent to the streaming path; an ops console for the decision audit trail; provider failover.
+**V2 roadmap:** surface the retrieval *cause* and split the message (transient → "try again"; genuinely empty → "no research matched your profile"); an ops console for the decision audit trail; provider failover.

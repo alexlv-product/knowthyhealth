@@ -21,7 +21,7 @@ if a decision changes.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Interception target | **Buffered `/api/v1/advice` only** | Clean single choke point; simplest retry; matches the PRD architecture sketch. The frontend uses `/advice/stream`, so this is demo-facing — streaming is V2 (same hooks applied inline, resolution emitted as SSE `error` events; mid-stream `retry_request` is constrained to pre-Call-2). |
+| Interception target | **Buffered first, then streaming** | V1 started on buffered `/api/v1/advice` (clean single choke point). The follow-up wired the same hooks into `/advice/stream` (the frontend's path): directives map to SSE events, and mid-stream `retry_request` is constrained to *before the first card streams*. Both endpoints are now agent-wired. |
 | Escalation model | **Escalate-for-demo** | The pipeline already degrades silently at intake and Tavily (they never throw). For the agent to *visibly choose* among recovery paths — and to exercise all five acceptance scenarios — those auto-degradations are deliberately re-routed through the agent. Revisit if this becomes more than a demo (a productionized version may want some degradations to stay silent/fast). |
 | `fail_gracefully` copy | **Agent-selected templates** | The error path is the worst place for unvetted model text; templates are deterministic, zero extra latency, and stay inside the 3s budget. Model-generated copy is V2. |
 | Agent model | **Anthropic-only, Haiku-class** | Fast/cheap classification; provider abstraction is V2. |
@@ -134,7 +134,8 @@ No changes to the deterministic RAG core (`citationFetcher`, `citationValidator`
 
 - **Day 1 (done):** `recoveryAgent/` scaffold — `contextAssembler`, `auditLogger`, `templates`, `index` (global middleware choke point + static floor). Wired into `server.js` (replaced the bare 500 handler). Zero happy-path overhead verified.
 - **Day 2 (done):** `agentClient` — Haiku (`claude-haiku-4-5`) non-streaming tool call, `tool_choice: {type:'any', disable_parallel_tool_use:true}` (model picks exactly one of the three action tools; allowlist enforced in code via `actions.ALLOWLIST`). `actions.dispatch` + `failGracefully` implemented end-to-end. `escalate()` runs the classifier under the 3s budget with a `withBudget` race; recursion guard holds (the agent's own model call is never re-escalated); any agent/budget/disallowed-action failure falls to the static floor, preserving the model's classification in the audit. `AGENT_ENABLED = true`. Verified live: classifications land in ~1.7–1.8s, well under budget.
-- **Day 3 (done):** `escalate()` now returns a **directive** (`respond` | `retry` | `fallback`); the executors validate per-stage constraints in code (`retryRequest` honors the one-retry budget; `activateFallback` is valid only at intake/citations and only for the existing modes — readout `activate_fallback` rejects → static floor). Stage escalation hooks added to `adviceController.js` (the buffered endpoint) at intake / citations (escalates on empty retrieval) / readout; the controller carries out retry/fallback and sends terminal `respond` directives. The global middleware coerces non-terminal directives via `resolveToResponse`. Failure-injection harness `test/recoveryAgentScenarios.js` (`npm run test:recovery`) drives the real controller with injected failures + deterministic agent decisions and asserts all **five acceptance scenarios + the audit-record schema** — all pass. The streaming controller is untouched (V2).
+- **Day 3 (done):** `escalate()` now returns a **directive** (`respond` | `retry` | `fallback`); the executors validate per-stage constraints in code (`retryRequest` honors the one-retry budget; `activateFallback` is valid only at intake/citations and only for the existing modes — readout `activate_fallback` rejects → static floor). Stage escalation hooks added to `adviceController.js` (the buffered endpoint) at intake / citations (escalates on empty retrieval) / readout; the controller carries out retry/fallback and sends terminal `respond` directives. The global middleware coerces non-terminal directives via `resolveToResponse`. Failure-injection harness `test/recoveryAgentScenarios.js` (`npm run test:recovery`) drives the real controller with injected failures + deterministic agent decisions and asserts all **five acceptance scenarios + the audit-record schema** — all pass.
+- **Agent on the streaming path (done — formerly V2):** the agent is now wired into `adviceStreamController.js`, the **user-facing** endpoint, at the **intake** and **readout** stages (retrieval stays deterministic on both paths). Directives map to SSE: `retry`/`fallback` continue the stream; `respond` emits a terminal `error` event. The hard case — a readout failure *mid-stream* — is handled by honoring `retry` **only before the first card is emitted** (Option B partial output can't be safely re-sent without duplicating cards); once cards are on the wire the agent can only fail gracefully, preserving the original 429/503 contract. Harness `test/recoveryAgentStreamScenarios.js` (`npm run test:recovery:stream`) covers six stream scenarios incl. that guard; verified live (happy path streams 4 cards, agent dormant). **The agent now runs on the path real users hit.**
 
 > Note: backend deps must be installed (`npm install` in `backend/`) — `@anthropic-ai/sdk` was absent from this checkout.
 
@@ -154,7 +155,8 @@ alarm users. This is the "categorical why" a user can act on, done safely.
 
 
 
-Streaming interception · model-generated `fail_gracefully` copy · provider abstraction ·
-frontend error-boundary integration · ops-console UI · cross-incident pattern detection ·
-config-defect (env/CORS) detection. (`demographic-default cached targets` from PRD Open
-Q1 is unnecessary — intake-null already falls through to the Tavily demographic spine.)
+Model-generated `fail_gracefully` copy · provider abstraction · frontend error-boundary
+integration · ops-console UI · cross-incident pattern detection · config-defect (env/CORS)
+detection. (Streaming interception is now done — see Implementation status. `demographic-default
+cached targets` from PRD Open Q1 is unnecessary — intake-null already falls through to the
+Tavily demographic spine.)
