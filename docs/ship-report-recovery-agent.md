@@ -1,9 +1,9 @@
-# Ship Report — KnowThyHealth Error-Handling Agent
+# Ship Report — KnowThyHealth Recovery Agent
 
 **Status:** Shipped to production · June 2026 · [github.com/alexlv-product/knowthyhealth](https://github.com/alexlv-product/knowthyhealth)
 **Surfaces:** frontend (Vercel) + backend (Railway), deployed from `main`.
 
-A one-page account of what we built, the decisions behind it, and how it was verified. Full spec: [prd-error-handling-agent.md](prd-error-handling-agent.md). Engineering design: [error-agent-design.md](error-agent-design.md).
+A one-page account of what we built, the decisions behind it, and how it was verified. Full spec: [prd-recovery-agent.md](prd-recovery-agent.md). Engineering design: [recovery-agent-design.md](recovery-agent-design.md).
 
 ---
 
@@ -13,7 +13,7 @@ KnowThyHealth depends on outside services — the Claude models and the Tavily r
 
 ## What shipped
 
-**1. An error-handling agent.** When a pipeline step fails in an *ambiguous* way (garbled model output, a rate limit), a fixed rule can't tell whether to retry, continue degraded, or stop — but a model can. A fast, cheap LLM (Claude Haiku, tool-calling) reads the error context, **classifies the root cause,** and chooses exactly one **pre-approved recovery action** (retry · continue degraded · fail gracefully). Every decision is written to a structured **audit log** (error, diagnosis, action, outcome). Guardrails: a 3-second budget, no self-recursion, a code-enforced action allowlist (it can't invent actions), and **zero overhead on the happy path** — it only runs on a failure.
+**1. An recovery agent.** When a pipeline step fails in an *ambiguous* way (garbled model output, a rate limit), a fixed rule can't tell whether to retry, continue degraded, or stop — but a model can. A fast, cheap LLM (Claude Haiku, tool-calling) reads the error context, **classifies the root cause,** and chooses exactly one **pre-approved recovery action** (retry · continue degraded · fail gracefully). Every decision is written to a structured **audit log** (error, diagnosis, action, outcome). Guardrails: a 3-second budget, no self-recursion, a code-enforced action allowlist (it can't invent actions), and **zero overhead on the happy path** — it only runs on a failure.
 
 **2. Honest retrieval-failure UX.** Empty source retrieval no longer produces an all-F readout. We retry once, and if it still fails we surface a clear alert and stop. On the live (streaming) path the user sees an interim "we're retrying" note, then either the real readout or — if it's still down — *"the service that retrieves the sources isn't responding; we won't show you incomplete results."* If they retry and it keeps failing, the message escalates to *"this is out of our hands, please wait 10 minutes,"* and the retry button becomes a re-enabling 10-minute countdown.
 

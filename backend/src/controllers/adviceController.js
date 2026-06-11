@@ -1,11 +1,11 @@
 /**
  * adviceController.js — SAD §3.2.2. The single request orchestrator (buffered).
  *
- * PRD v1.4 pipeline, now with the error-handling AGENT wired in at each stage
- * (PRD: KTH Error-Handling Agent). The pipeline already degraded gracefully on its
+ * PRD v1.4 pipeline, now with the recovery AGENT wired in at each stage
+ * (PRD: KTH Recovery Agent). The pipeline already degraded gracefully on its
  * own; the agent makes those decisions model-directed and audited ("escalate-for-
  * demo"). At each of the three stages, on failure the controller calls
- * errorAgent.escalate() and acts on the returned directive:
+ * recoveryAgent.escalate() and acts on the returned directive:
  *
  *   'respond'  → terminal: send the agent's (or static-floor) envelope and stop.
  *   'retry'    → re-run this stage once, then continue (bounded to one retry cycle).
@@ -26,7 +26,7 @@
  * deliberately NOT wired to the agent in V1 (design note: buffered only).
  *
  * Logging hygiene (Flag #10): the [advice] log carries only counts, status, timings,
- * and the support reference. The agent's own [errorAgent] incident log reuses that
+ * and the support reference. The agent's own [recoveryAgent] incident log reuses that
  * same support reference so the two correlate.
  */
 
@@ -35,8 +35,8 @@ const { processIntake } = require('../services/intakeProcessor');
 const { fetchCitations } = require('../services/citationFetcher');
 const { generateAdvice } = require('../services/adviceGenerator');
 const { validateCitations } = require('../services/citationValidator');
-const { escalate } = require('../errorAgent');
-const { STATUS_FOR_CODE } = require('../errorAgent/templates');
+const { escalate } = require('../recoveryAgent');
+const { STATUS_FOR_CODE } = require('../recoveryAgent/templates');
 const { RETRIEVAL_UNAVAILABLE, RETRIEVAL_TERMINAL_MESSAGE } = require('../utils/userMessages');
 const { ValidationError, RateLimitError, newSupportReference } = require('../utils/errors');
 

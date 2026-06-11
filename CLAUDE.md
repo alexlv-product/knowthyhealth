@@ -60,9 +60,9 @@ The two calls use **different models on purpose**: Sonnet for the cheap, fast in
 
 Generation is tolerant of imperfect model output: `coerceCard`/`coerceAdvice` fill missing fields with safe defaults and `parseAdviceText` falls back to a partial-JSON parse, so a dropped field degrades one card rather than 503-ing the whole readout. `assertSchema` is the final guard.
 
-### Error-Handling Agent (`backend/src/errorAgent/`, V1 built)
+### Recovery Agent (`backend/src/recoveryAgent/`, V1 built)
 
-A V1 agentic **fallback** layer that intercepts pipeline errors, classifies root cause, and picks one allowlisted recovery action (`retry_request` / `activate_fallback` / `fail_gracefully`; `log_diagnosis` is always-on in code) via Claude tool calling on Haiku, with a structured `[errorAgent]` audit log. It is **additive** — it does not replace the deterministic RAG core or touch the citation-allowlist guarantee. Full design + per-day implementation status: `docs/error-agent-design.md` (read it before working on the agent). Spec: `PRD_KTH_Error_Handling_Agent.md`. Acceptance harness: `npm run test:agent` (drives the real controller with injected failures + deterministic agent decisions — no live model call; covers all five PRD scenarios).
+A V1 agentic **fallback** layer that intercepts pipeline errors, classifies root cause, and picks one allowlisted recovery action (`retry_request` / `activate_fallback` / `fail_gracefully`; `log_diagnosis` is always-on in code) via Claude tool calling on Haiku, with a structured `[recoveryAgent]` audit log. It is **additive** — it does not replace the deterministic RAG core or touch the citation-allowlist guarantee. Full design + per-day implementation status: `docs/recovery-agent-design.md` (read it before working on the agent). Spec: `PRD_KTH_Error_Handling_Agent.md`. Acceptance harness: `npm run test:recovery` (drives the real controller with injected failures + deterministic agent decisions — no live model call; covers all five PRD scenarios).
 
 `escalate(error, ctx)` returns a **directive** — `respond` (terminal envelope), `retry` (re-run the stage once), or `fallback` (continue in a degraded mode); `adviceController.js` (buffered endpoint only) acts on it at the **intake** and **readout** hooks, and the global middleware coerces non-terminal directives via `resolveToResponse`.
 

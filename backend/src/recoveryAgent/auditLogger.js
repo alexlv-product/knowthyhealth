@@ -2,7 +2,7 @@
  * auditLogger.js — the structured incident record. This is the demo artifact and
  * the interview exhibit: it must tell the decision story without code access.
  *
- * One JSON line per incident under the `[errorAgent]` tag, mirroring the existing
+ * One JSON line per incident under the `[recoveryAgent]` tag, mirroring the existing
  * `[advice]` log style and reusing the request's supportReference as the
  * correlation id so an agent incident lines up with its pipeline log entry.
  *
@@ -42,7 +42,7 @@ function logIncident(record) {
     outcome: record.outcome || null,
     handlingLatencyMs: typeof record.handlingLatencyMs === 'number' ? record.handlingLatencyMs : null,
   };
-  console.info('[errorAgent]', JSON.stringify(line));
+  console.info('[recoveryAgent]', JSON.stringify(line));
   return line;
 }
 

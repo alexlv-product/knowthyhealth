@@ -1,8 +1,8 @@
 /**
- * errorAgent/index.js — entry point for the error-handling agent.
+ * recoveryAgent/index.js — entry point for the recovery agent.
  *
  * Two surfaces:
- *   - errorAgentMiddleware(err, req, res, next): the global Express choke point.
+ *   - recoveryAgentMiddleware(err, req, res, next): the global Express choke point.
  *     Replaces the bare 500 handler with an audited one. (Day 1 wiring.)
  *   - escalate(error, ctx): the per-stage hook the controllers will call to hand
  *     a stage failure to the agent. (Stage hooks land with the agent in Day 2-3.)
@@ -145,7 +145,7 @@ async function escalate(error, ctx = {}) {
  * overhead). No stage context here, so it is the floor: classify-to-envelope.
  */
 // eslint-disable-next-line no-unused-vars
-async function errorAgentMiddleware(err, req, res, next) {
+async function recoveryAgentMiddleware(err, req, res, next) {
   if (res.headersSent) return next(err); // mid-stream (SSE) — leave to that path (V2)
   const directive = await escalate(err, { req, stage: 'unknown' });
   const { status, body, headers } = resolveToResponse(directive, err);
@@ -153,4 +153,4 @@ async function errorAgentMiddleware(err, req, res, next) {
   return res.status(status).json(body);
 }
 
-module.exports = { escalate, resolveToResponse, errorAgentMiddleware, AGENT_ENABLED, BUDGET_MS };
+module.exports = { escalate, resolveToResponse, recoveryAgentMiddleware, AGENT_ENABLED, BUDGET_MS };

@@ -13,7 +13,7 @@ const cors = require('cors');
 const adviceController = require('./src/controllers/adviceController');
 const adviceStreamController = require('./src/controllers/adviceStreamController');
 const { newSupportReference } = require('./src/utils/errors');
-const { errorAgentMiddleware } = require('./src/errorAgent');
+const { recoveryAgentMiddleware } = require('./src/recoveryAgent');
 
 const app = express();
 
@@ -64,10 +64,10 @@ app.get('/healthz', (req, res) => res.status(200).json({ ok: true }));
 
 // Global error handler — the error agent's choke point. Audited replacement for
 // the bare 500 handler: same opaque-envelope contract (D-15/16, PRD v1.4 §5.2),
-// plus a structured [errorAgent] incident record. Runs only on a forwarded error,
+// plus a structured [recoveryAgent] incident record. Runs only on a forwarded error,
 // so the happy path is untouched. Day 1: static floor; agent classification (Day 2)
 // slots in behind the same call without changing this wiring.
-app.use(errorAgentMiddleware);
+app.use(recoveryAgentMiddleware);
 
 // Start only when run directly, so tests can import the app without binding a port.
 if (require.main === module) {

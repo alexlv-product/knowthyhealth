@@ -1,4 +1,4 @@
-# Error-Handling Agent — Design Note (V1)
+# Recovery Agent — Design Note (V1)
 
 Companion to `PRD_KTH_Error_Handling_Agent.md`. This note resolves the three places
 where the PRD's mental model didn't match the actual codebase, and records the
@@ -42,7 +42,7 @@ why "escalate-for-demo" is required — without it the agent rarely fires:
 ### Escalation hooks (what changes)
 
 At each of the three stage `try/catch` sites, instead of handling inline, call
-`errorAgent.escalate(error, ctx)` and let the agent pick an allowlisted action:
+`recoveryAgent.escalate(error, ctx)` and let the agent pick an allowlisted action:
 
 | Hook | Today (inline) | After escalation — agent may choose |
 |---|---|---|
@@ -76,8 +76,8 @@ against a `const` allowlist before running. An unknown/invented action → `fail
 - **3s total agent budget.** On exhaustion → static fallback (existing envelope), no
   agent involvement. Wall-clock timer started in `escalate()`.
 - **Recursion guard.** The agent's *own* Anthropic (Haiku) classification call is **not**
-  wrapped by the agent. A 429/failure from that call → static fallback. The errorAgent
-  never handles errorAgent errors. No path re-enters `escalate()`.
+  wrapped by the agent. A 429/failure from that call → static fallback. The recoveryAgent
+  never handles recoveryAgent errors. No path re-enters `escalate()`.
 - **Zero happy-path overhead.** The module is constructed/invoked **only on throw**.
   Nothing in the success path imports or runs it. (Acceptance: p95 on a clean request
   unchanged.)
@@ -89,7 +89,7 @@ against a `const` allowlist before running. An unknown/invented action → `fail
 
 ## Audit record schema
 
-One structured JSON line per incident, logged under a new `[errorAgent]` tag (same
+One structured JSON line per incident, logged under a new `[recoveryAgent]` tag (same
 style as the existing `[advice]` log), reusing the request's `supportReference` as the
 correlation id:
 
@@ -104,7 +104,7 @@ without code access.
 ## Module layout
 
 ```
-backend/src/errorAgent/
+backend/src/recoveryAgent/
   index.js            escalate(error, ctx) entry + wrapped global middleware;
                       budget timer, recursion guard, static-fallback floor
   contextAssembler.js builds the privacy-safe context (shape, not values)
@@ -112,7 +112,7 @@ backend/src/errorAgent/
                       system prompt; Haiku model, maxRetries: 0
   actions.js          executors + the const action allowlist
   templates.js        stage-specific fail_gracefully copy
-  auditLogger.js      structured [errorAgent] incident record
+  auditLogger.js      structured [recoveryAgent] incident record
 ```
 
 No changes to the deterministic RAG core (`citationFetcher`, `citationValidator`,
@@ -132,9 +132,9 @@ No changes to the deterministic RAG core (`citationFetcher`, `citationValidator`
 
 ## Implementation status
 
-- **Day 1 (done):** `errorAgent/` scaffold — `contextAssembler`, `auditLogger`, `templates`, `index` (global middleware choke point + static floor). Wired into `server.js` (replaced the bare 500 handler). Zero happy-path overhead verified.
+- **Day 1 (done):** `recoveryAgent/` scaffold — `contextAssembler`, `auditLogger`, `templates`, `index` (global middleware choke point + static floor). Wired into `server.js` (replaced the bare 500 handler). Zero happy-path overhead verified.
 - **Day 2 (done):** `agentClient` — Haiku (`claude-haiku-4-5`) non-streaming tool call, `tool_choice: {type:'any', disable_parallel_tool_use:true}` (model picks exactly one of the three action tools; allowlist enforced in code via `actions.ALLOWLIST`). `actions.dispatch` + `failGracefully` implemented end-to-end. `escalate()` runs the classifier under the 3s budget with a `withBudget` race; recursion guard holds (the agent's own model call is never re-escalated); any agent/budget/disallowed-action failure falls to the static floor, preserving the model's classification in the audit. `AGENT_ENABLED = true`. Verified live: classifications land in ~1.7–1.8s, well under budget.
-- **Day 3 (done):** `escalate()` now returns a **directive** (`respond` | `retry` | `fallback`); the executors validate per-stage constraints in code (`retryRequest` honors the one-retry budget; `activateFallback` is valid only at intake/citations and only for the existing modes — readout `activate_fallback` rejects → static floor). Stage escalation hooks added to `adviceController.js` (the buffered endpoint) at intake / citations (escalates on empty retrieval) / readout; the controller carries out retry/fallback and sends terminal `respond` directives. The global middleware coerces non-terminal directives via `resolveToResponse`. Failure-injection harness `test/errorAgentScenarios.js` (`npm run test:agent`) drives the real controller with injected failures + deterministic agent decisions and asserts all **five acceptance scenarios + the audit-record schema** — all pass. The streaming controller is untouched (V2).
+- **Day 3 (done):** `escalate()` now returns a **directive** (`respond` | `retry` | `fallback`); the executors validate per-stage constraints in code (`retryRequest` honors the one-retry budget; `activateFallback` is valid only at intake/citations and only for the existing modes — readout `activate_fallback` rejects → static floor). Stage escalation hooks added to `adviceController.js` (the buffered endpoint) at intake / citations (escalates on empty retrieval) / readout; the controller carries out retry/fallback and sends terminal `respond` directives. The global middleware coerces non-terminal directives via `resolveToResponse`. Failure-injection harness `test/recoveryAgentScenarios.js` (`npm run test:recovery`) drives the real controller with injected failures + deterministic agent decisions and asserts all **five acceptance scenarios + the audit-record schema** — all pass. The streaming controller is untouched (V2).
 
 > Note: backend deps must be installed (`npm install` in `backend/`) — `@anthropic-ai/sdk` was absent from this checkout.
 

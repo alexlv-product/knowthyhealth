@@ -3,9 +3,9 @@
 Evidence-graded wellness, re-narrowed to who the research actually studied. Live at **[knowthyhealth.app](https://knowthyhealth.app)**.
 
 - **[Product Requirements (KnowThyHealth)](prd-knowthyhealth.md)** — the product: demographic-aware, citation-verified wellness readouts (PRD v1.3 + v1.4 changelog).
-- **[Product Requirements (Error-Handling Agent)](prd-error-handling-agent.md)** — an LLM agent that diagnoses runtime failures and chooses a constrained recovery, with an audit trail.
+- **[Product Requirements (Recovery Agent)](prd-recovery-agent.md)** — an LLM agent that diagnoses runtime failures and chooses a constrained recovery, with an audit trail.
 - **[Competitive Analysis](competitive-analysis.md)** — the market gap: competitors give answers; KnowThyHealth shows its work.
-- **[Ship Report (Error-Handling Agent)](ship-report-error-handling-agent.md)** — what shipped, the decisions behind it, and how it was verified in production.
+- **[Ship Report (Recovery Agent)](ship-report-recovery-agent.md)** — what shipped, the decisions behind it, and how it was verified in production.
 
 ---
 
@@ -20,4 +20,4 @@ Two architectures ship side by side, on purpose:
 
 ## Deeper references
 
-- **[Error-agent engineering design](error-agent-design.md)** — the implementation design note (control flow, safety rails, V1/V2 status) behind the ship report.
+- **[Recovery-agent engineering design](recovery-agent-design.md)** — the implementation design note (control flow, safety rails, V1/V2 status) behind the ship report.

@@ -1,12 +1,12 @@
 /**
- * errorAgentScenarios.js — failure-injection harness for the PRD acceptance scenarios
- * (KTH Error-Handling Agent §Success Criteria) plus the retrieval-failure UX policy.
- * Run: `node test/errorAgentScenarios.js` (or `npm run test:agent`).
+ * recoveryAgentScenarios.js — failure-injection harness for the PRD acceptance scenarios
+ * (KTH Recovery Agent §Success Criteria) plus the retrieval-failure UX policy.
+ * Run: `node test/recoveryAgentScenarios.js` (or `npm run test:recovery`).
  *
- * It drives the REAL adviceController with the REAL errorAgent wiring, but injects
+ * It drives the REAL adviceController with the REAL recoveryAgent wiring, but injects
  * deterministic stage failures and a deterministic agent DECISION (no live Anthropic
  * call — fast, never flaky). Each scenario asserts the user-facing response AND, where
- * the agent is involved, that the [errorAgent] audit log tells the decision story.
+ * the agent is involved, that the [recoveryAgent] audit log tells the decision story.
  *
  * Mechanism: the service modules are mutated to thin wrappers that dispatch to a
  * per-scenario behavior fn BEFORE the controller is required (so the controller's
@@ -22,7 +22,7 @@ const intake = require('../src/services/intakeProcessor');
 const fetcher = require('../src/services/citationFetcher');
 const generator = require('../src/services/adviceGenerator');
 const inputValidator = require('../src/utils/inputValidator');
-const agentClient = require('../src/errorAgent/agentClient');
+const agentClient = require('../src/recoveryAgent/agentClient');
 const { RateLimitError, AdviceGenerationError } = require('../src/utils/errors');
 
 // ── Per-scenario injection points ─────────────────────────────────────────────
@@ -56,12 +56,12 @@ const noAgent = async () => { throw new Error('agent must NOT be consulted in th
 let captured = [];
 const realInfo = console.info;
 console.info = (tag, json) => {
-  if (tag === '[advice]' || tag === '[errorAgent]') {
+  if (tag === '[advice]' || tag === '[recoveryAgent]') {
     try { captured.push({ tag, obj: JSON.parse(json) }); } catch { /* ignore */ }
   }
 };
 const advice = () => captured.filter((l) => l.tag === '[advice]').map((l) => l.obj);
-const incidents = () => captured.filter((l) => l.tag === '[errorAgent]').map((l) => l.obj);
+const incidents = () => captured.filter((l) => l.tag === '[recoveryAgent]').map((l) => l.obj);
 
 function makeRes() {
   return {
@@ -98,7 +98,7 @@ async function run(title, setup, assert) {
   }, (res) => {
     check('200 OK', res._status === 200, `got ${res._status}`);
     check('readout returned with a citation', res._body && res._body.cards && res._body.cards.length === 1);
-    check('agent was NOT consulted for retrieval (no [errorAgent] incident)', incidents().length === 0);
+    check('agent was NOT consulted for retrieval (no [recoveryAgent] incident)', incidents().length === 0);
   });
 
   // 2) Empty retrieval after the one retry → alert, never an all-F readout.
@@ -165,7 +165,7 @@ async function run(title, setup, assert) {
     const keys = ['ts', 'ref', 'stage', 'errorFingerprint', 'contextSummary', 'classification', 'reasoningExcerpt', 'toolInvoked', 'outcome', 'handlingLatencyMs'];
     check('incident has the full reviewable schema', inc && keys.every((k) => k in inc), inc ? `missing: ${keys.filter((k) => !(k in inc)).join(',')}` : 'no incident');
     check('contextSummary carries payload SHAPE only, no values', inc && inc.contextSummary && typeof inc.contextSummary.payloadShape === 'object' && !JSON.stringify(inc.contextSummary).includes('female'));
-    check('[advice] and [errorAgent] share the support reference', inc && advice()[0] && inc.ref === advice()[0].ref);
+    check('[advice] and [recoveryAgent] share the support reference', inc && advice()[0] && inc.ref === advice()[0].ref);
   });
 
   console.info = realInfo;

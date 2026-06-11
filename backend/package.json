@@ -9,7 +9,7 @@
     "dev": "nodemon server.js",
     "ping:anthropic": "node test/anthropicPing.js",
     "ping:tavily": "node test/tavilyPing.js",
-    "test:agent": "node test/errorAgentScenarios.js"
+    "test:recovery": "node test/recoveryAgentScenarios.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

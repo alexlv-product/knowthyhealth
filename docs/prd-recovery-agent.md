@@ -1,4 +1,4 @@
-# PRD: KnowThyHealth Error-Handling Agent
+# PRD: KnowThyHealth Recovery Agent
 
 **Status:** Draft v1 — June 10, 2026
 **Owner:** Yael Lopez-Vivar
@@ -71,13 +71,13 @@ Request → KTH pipeline stage → error thrown
       → [agent failure or timeout] → static fallback
 ```
 
-New backend module: `errorAgent/` (context assembler, agent client with tool definitions, action executors, audit logger). No changes to the deterministic RAG core — the citation allowlist guarantee is untouched.
+New backend module: `recoveryAgent/` (context assembler, agent client with tool definitions, action executors, audit logger). No changes to the deterministic RAG core — the citation allowlist guarantee is untouched.
 
 ## Success Criteria (acceptance test = the resume bullet)
 
 The project is resume-listable when every clause of this bullet is demonstrably true:
 
-> *Designed and shipped an agentic error-handling layer for KnowThyHealth: an LLM agent using tool calling to intercept unhandled runtime errors, diagnose root cause from stack traces and request context, and autonomously execute constrained recovery actions (retry, fallback, graceful degradation) with a full audit trail of agent decisions.*
+> *Designed and shipped a bounded, model-directed recovery agent for KnowThyHealth: an LLM uses tool calling to diagnose unhandled runtime failures from stack traces and request context and select a constrained recovery action (retry, fallback, graceful degradation), executed by a deterministic, audited control layer with hard guardrails — a latency budget, a single-retry cap, a code-enforced action allowlist, and no self-recursion.*
 
 Concretely:
 1. Kill Tavily mid-request (or force a timeout) → agent classifies transient, retries once, request succeeds → audit log shows the decision chain.
@@ -88,11 +88,11 @@ Concretely:
 
 ## Positioning Note (why this exists)
 
-KTH's core is deliberately deterministic — orchestrated RAG with a post-hoc citation allowlist, chosen because verifiability outranks flexibility for health research. The error-handling layer is the complement: a domain where ambiguity outranks determinism, so model-directed autonomy earns its place. Together they form the portfolio argument: *both architectures shipped, with explicit reasoning about when each wins.* This directly addresses the "experience building agentic solutions" requirement (Sprout/Trellis, EDB-class roles) and the responsible-AI-deployment posture (Casepoint-class roles).
+KTH's core is deliberately deterministic — orchestrated RAG with a post-hoc citation allowlist, chosen because verifiability outranks flexibility for health research. The recovery layer is the complement: a domain where ambiguity outranks determinism, so model-directed autonomy earns its place. Together they form the portfolio argument: *both architectures shipped, with explicit reasoning about when each wins.* This directly addresses the "experience building agentic solutions" requirement (Sprout/Trellis, EDB-class roles) and the responsible-AI-deployment posture (Casepoint-class roles).
 
 ## Build Plan (Claude Code, est. 2–4 days)
 
-1. **Day 1:** `errorAgent/` scaffolding — middleware choke point, context assembler, static fallback path, audit logger. Verify zero happy-path overhead.
+1. **Day 1:** `recoveryAgent/` scaffolding — middleware choke point, context assembler, static fallback path, audit logger. Verify zero happy-path overhead.
 2. **Day 1–2:** Agent client with tool definitions; classification prompt; `fail_gracefully` end-to-end (the floor works first).
 3. **Day 2–3:** `retry_request` and `activate_fallback` executors with constraints; recursion guard; latency budget enforcement.
 4. **Day 3–4:** Failure-injection test harness for the five acceptance scenarios; audit log review; README + this PRD into `/docs`.

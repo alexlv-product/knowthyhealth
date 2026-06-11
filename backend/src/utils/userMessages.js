@@ -1,8 +1,8 @@
 /**
  * userMessages.js — shared user-facing copy + error code for the retrieval-failure
- * surface. Lives here (neutral util) so both controllers and the error-agent
+ * surface. Lives here (neutral util) so both controllers and the recovery-agent
  * templates can use it without coupling the agent-free streaming controller to the
- * errorAgent module.
+ * recoveryAgent module.
  *
  * Product rule (no all-F readouts): when citation retrieval comes back empty we do
  * NOT compose a hollow, all-F "no evidence found" readout — that misrepresents a
